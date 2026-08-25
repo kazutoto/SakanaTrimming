@@ -1,11 +1,11 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import {defineConfig, UserConfig} from 'vite';
 
 export default defineConfig((): UserConfig => {
   return {
-    base: process.env.GITHUB_PAGES === 'true' ? '/SakanaTriming/' : '/',
+    base: process.env.GITHUB_PAGES === 'true' ? '/SakanaTrimming/' : '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
