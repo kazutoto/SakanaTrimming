@@ -305,8 +305,11 @@ export default function App() {
       }}
     >
       <header className="h-16 flex items-center justify-between px-4 sm:px-6 bg-white/5 backdrop-blur-xl border-b border-white/10 z-50 shrink-0">
-        <div className="flex items-center">
+        <div className="flex items-center gap-3">
           <img src={`${import.meta.env.BASE_URL}SakanaTrimming.jpg`} alt="SakanaTrimming" className="h-10 w-auto rounded-lg object-contain" />
+          <h1 className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">
+            SakanaTrimming
+          </h1>
         </div>
           
         {imageState && (
@@ -400,7 +403,7 @@ export default function App() {
                   {(['nw', 'ne', 'sw', 'se'] as const).map((type) => (
                     <div
                       key={type}
-                      className="absolute w-12 h-12 flex items-center justify-center -ml-6 -mt-6 touch-none"
+                      className="absolute w-20 h-20 flex items-center justify-center -ml-10 -mt-10 touch-none"
                       style={{
                         top: type.includes('n') ? '0%' : '100%',
                         left: type.includes('w') ? '0%' : '100%',
@@ -408,7 +411,7 @@ export default function App() {
                       }}
                       onPointerDown={(e) => onPointerDown(e, type)}
                     >
-                      <div className="w-3 h-3 bg-blue-500 rounded-full shadow-lg pointer-events-none" />
+                      <div className="w-4 h-4 bg-blue-500 rounded-full shadow-lg pointer-events-none" />
                     </div>
                   ))}
                 </div>
