@@ -1,0 +1,8 @@
+{
+  "name": "SakanaTrimming",
+  "description": "A web application to intuitively crop images into a square format with customizable background padding.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
