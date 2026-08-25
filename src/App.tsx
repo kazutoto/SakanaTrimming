@@ -88,7 +88,7 @@ export default function App() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const save = () => {
+  const save = async () => {
     if (!imageState || !cropBox) return;
 
     const canvas = document.createElement('canvas');
@@ -107,23 +107,64 @@ export default function App() {
     ctx.drawImage(element, drawX, drawY);
 
     const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-    const a = document.createElement('a');
-    a.href = dataUrl;
     
     const now = new Date();
     const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
     const filename = `SakanaTrimming_${date}_${time}.jpg`;
-    a.download = filename;
-    
-    a.click();
 
-    setToastMessage(`画像「${filename}」の保存が完了しました`);
-    setCanSave(false);
-    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    toastTimeoutRef.current = setTimeout(() => {
-      setToastMessage(null);
-    }, 3000);
+    const finishSave = () => {
+      setToastMessage(`画像「${filename}」の保存が完了しました`);
+      setCanSave(false);
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = setTimeout(() => {
+        setToastMessage(null);
+      }, 3000);
+    };
+
+    const fallbackDownload = () => {
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      finishSave();
+    };
+
+    try {
+      const byteString = atob(dataUrl.split(',')[1]);
+      const mimeString = dataUrl.split(',')[0].split(':')[1].split(';')[0];
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+      }
+      const blob = new Blob([ab], { type: mimeString });
+      const file = new File([blob], filename, { type: mimeString });
+
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: filename,
+          });
+          finishSave();
+        } catch (error: any) {
+          if (error.name !== 'AbortError') {
+            console.error('Share failed:', error);
+            fallbackDownload();
+          } else {
+            setCanSave(true);
+          }
+        }
+        return;
+      }
+    } catch (e) {
+      console.error('Error preparing file for share:', e);
+    }
+
+    fallbackDownload();
   };
 
   const onPointerDown = (e: React.PointerEvent, type: 'move' | 'nw' | 'ne' | 'sw' | 'se') => {
