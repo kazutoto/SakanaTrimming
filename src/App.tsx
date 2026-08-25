@@ -305,13 +305,8 @@ export default function App() {
       }}
     >
       <header className="h-16 flex items-center justify-between px-4 sm:px-6 bg-white/5 backdrop-blur-xl border-b border-white/10 z-50 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <ImageIcon className="w-5 h-5 text-white" />
-          </div>
-          <h1 className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">
-            SakanaTrimming
-          </h1>
+        <div className="flex items-center">
+          <img src={`${import.meta.env.BASE_URL}SakanaTrimming.jpg`} alt="SakanaTrimming" className="h-10 w-auto rounded-lg object-contain" />
         </div>
           
         {imageState && (
