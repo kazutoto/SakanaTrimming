@@ -132,36 +132,41 @@ export default function App() {
       finishSave();
     };
 
-    try {
-      const byteString = atob(dataUrl.split(',')[1]);
-      const mimeString = dataUrl.split(',')[0].split(':')[1].split(';')[0];
-      const ab = new ArrayBuffer(byteString.length);
-      const ia = new Uint8Array(ab);
-      for (let i = 0; i < byteString.length; i++) {
-        ia[i] = byteString.charCodeAt(i);
-      }
-      const blob = new Blob([ab], { type: mimeString });
-      const file = new File([blob], filename, { type: mimeString });
+    const isIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent) || 
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: filename,
-          });
-          finishSave();
-        } catch (error: any) {
-          if (error.name !== 'AbortError') {
-            console.error('Share failed:', error);
-            fallbackDownload();
-          } else {
-            setCanSave(true);
-          }
+    if (isIOS) {
+      try {
+        const byteString = atob(dataUrl.split(',')[1]);
+        const mimeString = dataUrl.split(',')[0].split(':')[1].split(';')[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
         }
-        return;
+        const blob = new Blob([ab], { type: mimeString });
+        const file = new File([blob], filename, { type: mimeString });
+
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: filename,
+            });
+            finishSave();
+          } catch (error: any) {
+            if (error.name !== 'AbortError') {
+              console.error('Share failed:', error);
+              fallbackDownload();
+            } else {
+              setCanSave(true);
+            }
+          }
+          return;
+        }
+      } catch (e) {
+        console.error('Error preparing file for share:', e);
       }
-    } catch (e) {
-      console.error('Error preparing file for share:', e);
     }
 
     fallbackDownload();
