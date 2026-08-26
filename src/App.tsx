@@ -25,15 +25,18 @@ interface ImageState {
 interface CropBox {
   x: number;
   y: number;
-  size: number;
+  w: number;
+  h: number;
 }
 
 export default function App() {
   const [imageState, setImageState] = useState<ImageState | null>(null);
   const [bgColor, setBgColor] = useState<string>('#FFFFFF');
+  const [isSquareCrop, setIsSquareCrop] = useState<boolean>(true);
   const [cropBox, setCropBox] = useState<CropBox | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [canSave, setCanSave] = useState<boolean>(true);
+  const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -62,7 +65,7 @@ export default function App() {
         const imgY = (canvasSize - h) / 2;
         
         setImageState({ element: img, w, h, canvasSize, imgX, imgY });
-        setCropBox({ x: 0, y: 0, size: canvasSize });
+        setCropBox({ x: 0, y: 0, w: canvasSize, h: canvasSize });
         setCanSave(true);
       };
       img.src = src;
@@ -85,28 +88,52 @@ export default function App() {
     setImageState(null);
     setCropBox(null);
     setCanSave(true);
+    setPreviewDataUrl(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const save = async () => {
+  const executeCrop = () => {
     if (!imageState || !cropBox) return;
 
+    const { element, imgX, imgY, w: imgW, h: imgH } = imageState;
+    const { x: cx, y: cy, w: cw, h: ch } = cropBox;
+
+    const ix = Math.max(cx, imgX);
+    const iy = Math.max(cy, imgY);
+    const iRight = Math.min(cx + cw, imgX + imgW);
+    const iBottom = Math.min(cy + ch, imgY + imgH);
+
+    const iw = Math.max(0, iRight - ix);
+    const ih = Math.max(0, iBottom - iy);
+
+    let outSize = Math.max(iw, ih);
+    if (outSize === 0) {
+      outSize = Math.max(cw, ch);
+    }
+
     const canvas = document.createElement('canvas');
-    canvas.width = cropBox.size;
-    canvas.height = cropBox.size;
+    canvas.width = outSize;
+    canvas.height = outSize;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    const { element, imgX, imgY } = imageState;
-    const drawX = imgX - cropBox.x;
-    const drawY = imgY - cropBox.y;
-
-    ctx.drawImage(element, drawX, drawY);
+    if (iw > 0 && ih > 0) {
+      const sx = ix - imgX;
+      const sy = iy - imgY;
+      const dx = (outSize - iw) / 2;
+      const dy = (outSize - ih) / 2;
+      ctx.drawImage(element, sx, sy, iw, ih, dx, dy, iw, ih);
+    }
 
     const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+    setPreviewDataUrl(dataUrl);
+  };
+
+  const downloadPreview = async () => {
+    if (!previewDataUrl) return;
     
     const now = new Date();
     const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
@@ -115,7 +142,7 @@ export default function App() {
 
     const finishSave = () => {
       setToastMessage(`画像「${filename}」の保存が完了しました`);
-      setCanSave(false);
+      setPreviewDataUrl(null);
       if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
       toastTimeoutRef.current = setTimeout(() => {
         setToastMessage(null);
@@ -124,7 +151,7 @@ export default function App() {
 
     const fallbackDownload = () => {
       const a = document.createElement('a');
-      a.href = dataUrl;
+      a.href = previewDataUrl;
       a.download = filename;
       document.body.appendChild(a);
       a.click();
@@ -137,8 +164,8 @@ export default function App() {
 
     if (isIOS) {
       try {
-        const byteString = atob(dataUrl.split(',')[1]);
-        const mimeString = dataUrl.split(',')[0].split(':')[1].split(';')[0];
+        const byteString = atob(previewDataUrl.split(',')[1]);
+        const mimeString = previewDataUrl.split(',')[0].split(':')[1].split(';')[0];
         const ab = new ArrayBuffer(byteString.length);
         const ia = new Uint8Array(ab);
         for (let i = 0; i < byteString.length; i++) {
@@ -158,8 +185,6 @@ export default function App() {
             if (error.name !== 'AbortError') {
               console.error('Share failed:', error);
               fallbackDownload();
-            } else {
-              setCanSave(true);
             }
           }
           return;
@@ -202,80 +227,121 @@ export default function App() {
 
     let newX = startCrop.x;
     let newY = startCrop.y;
-    let newSize = startCrop.size;
+    let newW = startCrop.w;
+    let newH = startCrop.h;
 
     if (type === 'move') {
       newX = startCrop.x + dx;
       newY = startCrop.y + dy;
 
       if (Math.abs(newX - imgX) < snapThresh) newX = imgX;
-      if (Math.abs(newX + startCrop.size - (imgX + w)) < snapThresh) newX = imgX + w - startCrop.size;
+      if (Math.abs(newX + startCrop.w - (imgX + w)) < snapThresh) newX = imgX + w - startCrop.w;
       if (Math.abs(newY - imgY) < snapThresh) newY = imgY;
-      if (Math.abs(newY + startCrop.size - (imgY + h)) < snapThresh) newY = imgY + h - startCrop.size;
+      if (Math.abs(newY + startCrop.h - (imgY + h)) < snapThresh) newY = imgY + h - startCrop.h;
 
-      newX = Math.max(0, Math.min(newX, canvasSize - startCrop.size));
-      newY = Math.max(0, Math.min(newY, canvasSize - startCrop.size));
+      newX = Math.max(0, Math.min(newX, canvasSize - startCrop.w));
+      newY = Math.max(0, Math.min(newY, canvasSize - startCrop.h));
     } else {
-      let proposedSize = startCrop.size;
-      
-      if (type === 'se') proposedSize += Math.max(dx, dy);
-      else if (type === 'nw') proposedSize += Math.max(-dx, -dy);
-      else if (type === 'ne') proposedSize += Math.max(dx, -dy);
-      else if (type === 'sw') proposedSize += Math.max(-dx, dy);
-
       const minSize = 20 * scale;
-      let maxSize = canvasSize;
-      
-      if (type === 'se') maxSize = Math.min(canvasSize - startCrop.x, canvasSize - startCrop.y);
-      if (type === 'nw') maxSize = Math.min(startCrop.x + startCrop.size, startCrop.y + startCrop.size);
-      if (type === 'ne') maxSize = Math.min(canvasSize - startCrop.x, startCrop.y + startCrop.size);
-      if (type === 'sw') maxSize = Math.min(startCrop.x + startCrop.size, canvasSize - startCrop.y);
 
-      proposedSize = Math.max(minSize, Math.min(proposedSize, maxSize));
+      if (isSquareCrop) {
+        let propSize = startCrop.w;
+        if (type === 'se') propSize += Math.max(dx, dy);
+        else if (type === 'nw') propSize += Math.max(-dx, -dy);
+        else if (type === 'ne') propSize += Math.max(dx, -dy);
+        else if (type === 'sw') propSize += Math.max(-dx, dy);
 
-      if (type === 'se') {
-        const distX = Math.abs((startCrop.x + proposedSize) - (imgX + w));
-        const distY = Math.abs((startCrop.y + proposedSize) - (imgY + h));
-        if (distX < snapThresh && distX <= distY) proposedSize = (imgX + w) - startCrop.x;
-        else if (distY < snapThresh) proposedSize = (imgY + h) - startCrop.y;
-      } else if (type === 'nw') {
-        const distX = Math.abs((startCrop.x + startCrop.size - proposedSize) - imgX);
-        const distY = Math.abs((startCrop.y + startCrop.size - proposedSize) - imgY);
-        if (distX < snapThresh && distX <= distY) proposedSize = startCrop.x + startCrop.size - imgX;
-        else if (distY < snapThresh) proposedSize = startCrop.y + startCrop.size - imgY;
-      } else if (type === 'ne') {
-        const distX = Math.abs((startCrop.x + proposedSize) - (imgX + w));
-        const distY = Math.abs((startCrop.y + startCrop.size - proposedSize) - imgY);
-        if (distX < snapThresh && distX <= distY) proposedSize = (imgX + w) - startCrop.x;
-        else if (distY < snapThresh) proposedSize = startCrop.y + startCrop.size - imgY;
-      } else if (type === 'sw') {
-        const distX = Math.abs((startCrop.x + startCrop.size - proposedSize) - imgX);
-        const distY = Math.abs((startCrop.y + proposedSize) - (imgY + h));
-        if (distX < snapThresh && distX <= distY) proposedSize = startCrop.x + startCrop.size - imgX;
-        else if (distY < snapThresh) proposedSize = (imgY + h) - startCrop.y;
+        let maxSize = canvasSize;
+        if (type === 'se') maxSize = Math.min(canvasSize - startCrop.x, canvasSize - startCrop.y);
+        else if (type === 'nw') maxSize = Math.min(startCrop.x + startCrop.w, startCrop.y + startCrop.h);
+        else if (type === 'ne') maxSize = Math.min(canvasSize - startCrop.x, startCrop.y + startCrop.h);
+        else if (type === 'sw') maxSize = Math.min(startCrop.x + startCrop.w, canvasSize - startCrop.y);
+
+        propSize = Math.max(minSize, Math.min(propSize, maxSize));
+
+        if (type === 'se') {
+          const distX = Math.abs((startCrop.x + propSize) - (imgX + w));
+          const distY = Math.abs((startCrop.y + propSize) - (imgY + h));
+          if (distX < snapThresh && distX <= distY) propSize = (imgX + w) - startCrop.x;
+          else if (distY < snapThresh) propSize = (imgY + h) - startCrop.y;
+        } else if (type === 'nw') {
+          const distX = Math.abs((startCrop.x + startCrop.w - propSize) - imgX);
+          const distY = Math.abs((startCrop.y + startCrop.h - propSize) - imgY);
+          if (distX < snapThresh && distX <= distY) propSize = startCrop.x + startCrop.w - imgX;
+          else if (distY < snapThresh) propSize = startCrop.y + startCrop.h - imgY;
+        } else if (type === 'ne') {
+          const distX = Math.abs((startCrop.x + propSize) - (imgX + w));
+          const distY = Math.abs((startCrop.y + startCrop.h - propSize) - imgY);
+          if (distX < snapThresh && distX <= distY) propSize = (imgX + w) - startCrop.x;
+          else if (distY < snapThresh) propSize = startCrop.y + startCrop.h - imgY;
+        } else if (type === 'sw') {
+          const distX = Math.abs((startCrop.x + startCrop.w - propSize) - imgX);
+          const distY = Math.abs((startCrop.y + propSize) - (imgY + h));
+          if (distX < snapThresh && distX <= distY) propSize = startCrop.x + startCrop.w - imgX;
+          else if (distY < snapThresh) propSize = (imgY + h) - startCrop.y;
+        }
+
+        propSize = Math.max(minSize, Math.min(propSize, maxSize));
+        newW = propSize;
+        newH = propSize;
+      } else {
+        let propW = startCrop.w;
+        let propH = startCrop.h;
+
+        if (type === 'se') { propW += dx; propH += dy; }
+        else if (type === 'nw') { propW -= dx; propH -= dy; }
+        else if (type === 'ne') { propW += dx; propH -= dy; }
+        else if (type === 'sw') { propW -= dx; propH += dy; }
+
+        let maxW = canvasSize;
+        let maxH = canvasSize;
+        if (type === 'se') { maxW = canvasSize - startCrop.x; maxH = canvasSize - startCrop.y; }
+        else if (type === 'nw') { maxW = startCrop.x + startCrop.w; maxH = startCrop.y + startCrop.h; }
+        else if (type === 'ne') { maxW = canvasSize - startCrop.x; maxH = startCrop.y + startCrop.h; }
+        else if (type === 'sw') { maxW = startCrop.x + startCrop.w; maxH = canvasSize - startCrop.y; }
+
+        propW = Math.max(minSize, Math.min(propW, maxW));
+        propH = Math.max(minSize, Math.min(propH, maxH));
+
+        if (type === 'se') {
+          if (Math.abs((startCrop.x + propW) - (imgX + w)) < snapThresh) propW = (imgX + w) - startCrop.x;
+          if (Math.abs((startCrop.y + propH) - (imgY + h)) < snapThresh) propH = (imgY + h) - startCrop.y;
+        } else if (type === 'nw') {
+          if (Math.abs((startCrop.x + startCrop.w - propW) - imgX) < snapThresh) propW = startCrop.x + startCrop.w - imgX;
+          if (Math.abs((startCrop.y + startCrop.h - propH) - imgY) < snapThresh) propH = startCrop.y + startCrop.h - imgY;
+        } else if (type === 'ne') {
+          if (Math.abs((startCrop.x + propW) - (imgX + w)) < snapThresh) propW = (imgX + w) - startCrop.x;
+          if (Math.abs((startCrop.y + startCrop.h - propH) - imgY) < snapThresh) propH = startCrop.y + startCrop.h - imgY;
+        } else if (type === 'sw') {
+          if (Math.abs((startCrop.x + startCrop.w - propW) - imgX) < snapThresh) propW = startCrop.x + startCrop.w - imgX;
+          if (Math.abs((startCrop.y + propH) - (imgY + h)) < snapThresh) propH = (imgY + h) - startCrop.y;
+        }
+
+        propW = Math.max(minSize, Math.min(propW, maxW));
+        propH = Math.max(minSize, Math.min(propH, maxH));
+        
+        newW = propW;
+        newH = propH;
       }
-
-      proposedSize = Math.max(minSize, Math.min(proposedSize, maxSize));
-      newSize = proposedSize;
 
       if (type === 'se') {
         newX = startCrop.x;
         newY = startCrop.y;
       } else if (type === 'nw') {
-        newX = startCrop.x + startCrop.size - proposedSize;
-        newY = startCrop.y + startCrop.size - proposedSize;
+        newX = startCrop.x + startCrop.w - newW;
+        newY = startCrop.y + startCrop.h - newH;
       } else if (type === 'ne') {
         newX = startCrop.x;
-        newY = startCrop.y + startCrop.size - proposedSize;
+        newY = startCrop.y + startCrop.h - newH;
       } else if (type === 'sw') {
-        newX = startCrop.x + startCrop.size - proposedSize;
+        newX = startCrop.x + startCrop.w - newW;
         newY = startCrop.y;
       }
     }
 
-    setCropBox({ x: newX, y: newY, size: newSize });
+    setCropBox({ x: newX, y: newY, w: newW, h: newH });
     setCanSave(true);
-  }, [imageState]);
+  }, [imageState, isSquareCrop]);
 
   const onPointerUp = useCallback((e: PointerEvent) => {
     if (dragState.current) {
@@ -297,6 +363,16 @@ export default function App() {
     };
   }, [onPointerMove, onPointerUp]);
 
+  useEffect(() => {
+    setCropBox((prev) => {
+      if (isSquareCrop && prev && prev.w !== prev.h) {
+        const minDim = Math.min(prev.w, prev.h);
+        return { ...prev, w: minDim, h: minDim };
+      }
+      return prev;
+    });
+  }, [isSquareCrop]);
+
   return (
     <div 
       className="flex flex-col min-h-screen bg-[#020617] text-slate-100 overflow-hidden font-sans relative"
@@ -312,21 +388,33 @@ export default function App() {
           </h1>
         </div>
           
-        {imageState && (
-          <div className="flex items-center gap-2 px-2 sm:px-3 py-1.5 bg-black/30 rounded-full border border-white/10">
-            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider hidden sm:block">背景色</label>
-            <select
-              value={bgColor}
-              onChange={(e) => {
-                setBgColor(e.target.value);
-                setCanSave(true);
-              }}
-              className="bg-transparent text-sm focus:outline-none cursor-pointer text-slate-100"
-            >
-              {Object.entries(COLORS).map(([name, hex]) => (
-                <option key={name} value={hex} className="bg-slate-800 text-white">{name}</option>
-              ))}
-            </select>
+        {imageState && !previewDataUrl && (
+          <div className="flex items-center gap-3 sm:gap-4">
+            <label className="flex items-center gap-2 cursor-pointer bg-black/30 px-3 py-1.5 rounded-full border border-white/10 hover:bg-black/50 transition-colors">
+              <input 
+                type="checkbox" 
+                checked={isSquareCrop} 
+                onChange={(e) => setIsSquareCrop(e.target.checked)}
+                className="w-4 h-4 text-blue-600 rounded border-white/20 bg-black/30 focus:ring-blue-500 cursor-pointer"
+              />
+              <span className="text-xs font-semibold text-slate-300 whitespace-nowrap">正方形に固定</span>
+            </label>
+
+            <div className="flex items-center gap-2 px-2 sm:px-3 py-1.5 bg-black/30 rounded-full border border-white/10">
+              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider hidden sm:block">背景色</label>
+              <select
+                value={bgColor}
+                onChange={(e) => {
+                  setBgColor(e.target.value);
+                  setCanSave(true);
+                }}
+                className="bg-transparent text-sm focus:outline-none cursor-pointer text-slate-100"
+              >
+                {Object.entries(COLORS).map(([name, hex]) => (
+                  <option key={name} value={hex} className="bg-slate-800 text-white">{name}</option>
+                ))}
+              </select>
+            </div>
           </div>
         )}
       </header>
@@ -336,7 +424,32 @@ export default function App() {
         <div className="absolute top-1/4 -left-20 w-96 h-96 bg-blue-500/10 rounded-full blur-[120px] pointer-events-none"></div>
         <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none"></div>
 
-        {!imageState ? (
+        {previewDataUrl ? (
+          <div className="relative z-10 w-full max-w-[80vh] sm:max-w-[400px] mx-auto flex flex-col items-center select-none">
+            <h2 className="text-xl font-bold mb-4 text-white">プレビュー</h2>
+            <div className="w-full aspect-square rounded-sm overflow-hidden flex items-center justify-center shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-white/10">
+              <img src={previewDataUrl} alt="Preview" className="w-full h-full object-contain" />
+            </div>
+            
+            <div className="flex items-center justify-center gap-3 sm:gap-4 w-full mt-6 sm:mt-8">
+              <button
+                onClick={() => setPreviewDataUrl(null)}
+                className="px-4 py-2.5 text-sm font-medium hover:bg-white/5 rounded-lg transition-colors border border-transparent flex items-center gap-1.5 text-slate-300"
+              >
+                <X className="w-4 h-4" />
+                <span>戻る</span>
+              </button>
+              
+              <button
+                onClick={downloadPreview}
+                className="px-5 py-2.5 text-sm font-semibold rounded-lg transition-all border flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white shadow-lg shadow-green-600/20 border-green-400/20"
+              >
+                <Download className="w-4 h-4" />
+                <span>保存</span>
+              </button>
+            </div>
+          </div>
+        ) : !imageState ? (
           <div 
             className="relative z-10 w-full max-w-2xl bg-white/5 border-2 border-dashed border-white/20 p-8 md:p-16 rounded-xl flex flex-col items-center justify-center text-center cursor-pointer hover:border-blue-500 hover:bg-blue-500/10 transition-all duration-200"
             onDragOver={handleDragOver}
@@ -388,8 +501,8 @@ export default function App() {
                 <div
                   className="absolute cursor-move touch-none box-border"
                   style={{
-                    width: `${(cropBox.size / imageState.canvasSize) * 100}%`,
-                    height: `${(cropBox.size / imageState.canvasSize) * 100}%`,
+                    width: `${(cropBox.w / imageState.canvasSize) * 100}%`,
+                    height: `${(cropBox.h / imageState.canvasSize) * 100}%`,
                     left: `${(cropBox.x / imageState.canvasSize) * 100}%`,
                     top: `${(cropBox.y / imageState.canvasSize) * 100}%`,
                     boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.6)',
@@ -428,7 +541,7 @@ export default function App() {
               </button>
               
               <button
-                onClick={save}
+                onClick={executeCrop}
                 disabled={!canSave}
                 className={`px-5 py-2.5 text-sm font-semibold rounded-lg transition-all border flex items-center gap-2 ${
                   canSave 
@@ -436,18 +549,18 @@ export default function App() {
                     : 'bg-white/10 text-slate-400 cursor-not-allowed border-transparent shadow-none'
                 }`}
               >
-                <Download className="w-4 h-4" />
-                <span>トリミングして保存</span>
+                <CheckCircle className="w-4 h-4" />
+                <span>トリミングを実行</span>
               </button>
             </div>
           </div>
         )}
       </main>
 
-      {imageState && (
+      {imageState && !previewDataUrl && (
         <footer className="h-12 px-4 sm:px-6 hidden sm:flex items-center justify-center sm:justify-start bg-white/5 border-t border-white/10 shrink-0">
           <div className="flex items-center gap-4 text-[11px] font-medium text-slate-500 uppercase tracking-widest">
-            <span>Canvas: {cropBox?.size ? Math.round(cropBox.size) : '-'} x {cropBox?.size ? Math.round(cropBox.size) : '-'}px</span>
+            <span>Canvas: {cropBox?.w ? Math.round(cropBox.w) : '-'} x {cropBox?.h ? Math.round(cropBox.h) : '-'}px</span>
             <span className="h-3 w-px bg-white/10"></span>
             <span>Format: JPEG</span>
           </div>
