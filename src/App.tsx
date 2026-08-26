@@ -387,37 +387,37 @@ export default function App() {
             SakanaTrimming
           </h1>
         </div>
-          
-        {imageState && !previewDataUrl && (
-          <div className="flex items-center gap-3 sm:gap-4">
-            <label className="flex items-center gap-2 cursor-pointer bg-black/30 px-3 py-1.5 rounded-full border border-white/10 hover:bg-black/50 transition-colors">
-              <input 
-                type="checkbox" 
-                checked={isSquareCrop} 
-                onChange={(e) => setIsSquareCrop(e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded border-white/20 bg-black/30 focus:ring-blue-500 cursor-pointer"
-              />
-              <span className="text-xs font-semibold text-slate-300 whitespace-nowrap">正方形に固定</span>
-            </label>
-
-            <div className="flex items-center gap-2 px-2 sm:px-3 py-1.5 bg-black/30 rounded-full border border-white/10">
-              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider hidden sm:block">背景色</label>
-              <select
-                value={bgColor}
-                onChange={(e) => {
-                  setBgColor(e.target.value);
-                  setCanSave(true);
-                }}
-                className="bg-transparent text-sm focus:outline-none cursor-pointer text-slate-100"
-              >
-                {Object.entries(COLORS).map(([name, hex]) => (
-                  <option key={name} value={hex} className="bg-slate-800 text-white">{name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        )}
       </header>
+
+      {imageState && !previewDataUrl && (
+        <div className="flex items-center justify-center gap-3 sm:gap-6 py-3 px-4 bg-[#0f172a] border-b border-white/10 shrink-0 z-40 w-full overflow-x-auto">
+          <label className="flex items-center gap-2 cursor-pointer bg-black/30 px-3 py-1.5 rounded-full border border-white/10 hover:bg-black/50 transition-colors shrink-0">
+            <input 
+              type="checkbox" 
+              checked={isSquareCrop} 
+              onChange={(e) => setIsSquareCrop(e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded border-white/20 bg-black/30 focus:ring-blue-500 cursor-pointer"
+            />
+            <span className="text-xs font-semibold text-slate-300 whitespace-nowrap">選択範囲を正方形に固定</span>
+          </label>
+
+          <div className="flex items-center gap-2 px-2 sm:px-3 py-1.5 bg-black/30 rounded-full border border-white/10 shrink-0">
+            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">背景色</label>
+            <select
+              value={bgColor}
+              onChange={(e) => {
+                setBgColor(e.target.value);
+                setCanSave(true);
+              }}
+              className="bg-transparent text-sm focus:outline-none cursor-pointer text-slate-100"
+            >
+              {Object.entries(COLORS).map(([name, hex]) => (
+                <option key={name} value={hex} className="bg-slate-800 text-white">{name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
 
       <main className="flex-grow relative flex flex-col items-center justify-center p-4 sm:p-12 overflow-hidden">
         {/* Background Decorative Elements */}
