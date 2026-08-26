@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Upload, Download, X, Image as ImageIcon, CheckCircle, Pipette } from 'lucide-react';
+import { Upload, Download, X, Image as ImageIcon, CheckCircle, Pipette, RefreshCw } from 'lucide-react';
 
 const COLORS = {
   '白': '#FFFFFF',
@@ -30,6 +30,15 @@ interface CropBox {
   h: number;
 }
 
+interface StampState {
+  text: string;
+  x: number;
+  y: number;
+  scale: number;
+  angle: number;
+  color: string;
+}
+
 export default function App() {
   const [imageState, setImageState] = useState<ImageState | null>(null);
   const [bgColor, setBgColor] = useState<string>('#FFFFFF');
@@ -39,6 +48,9 @@ export default function App() {
   const [canSave, setCanSave] = useState<boolean>(true);
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [isEyedropperActive, setIsEyedropperActive] = useState<boolean>(false);
+  const [stamp, setStamp] = useState<StampState | null>(null);
+  const [stampInput, setStampInput] = useState<string>('🐟');
+  const [stampColor, setStampColor] = useState<string>('#000000');
   
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -51,6 +63,15 @@ export default function App() {
     startCrop: CropBox;
     scale: number;
     initialSnap: { top: boolean; bottom: boolean; left: boolean; right: boolean };
+  } | null>(null);
+
+  const stampDragState = useRef<{
+    type: 'move' | 'scaleRotate';
+    startX: number;
+    startY: number;
+    startStamp: StampState;
+    startAngle: number;
+    startDist: number;
   } | null>(null);
 
   const handleFile = (file: File) => {
@@ -70,6 +91,9 @@ export default function App() {
         setImageState({ element: img, w, h, canvasSize, imgX, imgY });
         setCropBox({ x: 0, y: 0, w: canvasSize, h: canvasSize });
         setCanSave(true);
+        setStamp(null);
+        setStampInput('🐟');
+        setStampColor('#000000');
       };
       img.src = src;
     };
@@ -92,6 +116,9 @@ export default function App() {
     setCropBox(null);
     setCanSave(true);
     setPreviewDataUrl(null);
+    setStamp(null);
+    setStampInput('🐟');
+    setStampColor('#000000');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -123,12 +150,34 @@ export default function App() {
     ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = imgW;
+    tempCanvas.height = imgH;
+    const tCtx = tempCanvas.getContext('2d');
+    if (tCtx) {
+      tCtx.drawImage(element, 0, 0);
+
+      if (stamp) {
+        tCtx.save();
+        tCtx.translate(stamp.x - imgX, stamp.y - imgY);
+        tCtx.rotate((stamp.angle * Math.PI) / 180);
+        const baseSize = imageState.canvasSize * 0.15;
+        const fontSize = baseSize * stamp.scale * 0.8;
+        tCtx.font = `bold ${fontSize}px sans-serif`;
+        tCtx.textAlign = 'center';
+        tCtx.textBaseline = 'middle';
+        tCtx.fillStyle = stamp.color;
+        tCtx.fillText(stamp.text, 0, 0);
+        tCtx.restore();
+      }
+    }
+
     if (iw > 0 && ih > 0) {
       const sx = ix - imgX;
       const sy = iy - imgY;
       const dx = (outSize - iw) / 2;
       const dy = (outSize - ih) / 2;
-      ctx.drawImage(element, sx, sy, iw, ih, dx, dy, iw, ih);
+      ctx.drawImage(tempCanvas, sx, sy, iw, ih, dx, dy, iw, ih);
     }
 
     const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
@@ -253,6 +302,39 @@ export default function App() {
     setIsEyedropperActive(false);
   };
 
+  const addStamp = (text: string, color: string) => {
+    if (!imageState) return;
+    setStamp((prevStamp) => ({
+      text: text,
+      color: color,
+      x: prevStamp ? prevStamp.x : imageState.canvasSize / 2,
+      y: prevStamp ? prevStamp.y : imageState.canvasSize / 2,
+      scale: prevStamp ? prevStamp.scale : 1,
+      angle: prevStamp ? prevStamp.angle : 0
+    }));
+    setCanSave(true);
+  };
+
+  const handleStampPointerDown = (e: React.PointerEvent, type: 'move' | 'scaleRotate') => {
+    e.stopPropagation();
+    if (!containerRef.current || !stamp || !imageState) return;
+    
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    const rect = containerRef.current.getBoundingClientRect();
+    
+    const centerX = rect.left + (stamp.x / imageState.canvasSize) * rect.width;
+    const centerY = rect.top + (stamp.y / imageState.canvasSize) * rect.width;
+    
+    stampDragState.current = {
+      type,
+      startX: e.clientX,
+      startY: e.clientY,
+      startStamp: { ...stamp },
+      startAngle: Math.atan2(e.clientY - centerY, e.clientX - centerX),
+      startDist: Math.hypot(e.clientY - centerY, e.clientX - centerX)
+    };
+  };
+
   const onPointerDown = (e: React.PointerEvent, type: 'move' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w') => {
     e.stopPropagation();
     if (!containerRef.current || !cropBox || !imageState) return;
@@ -277,6 +359,37 @@ export default function App() {
   };
 
   const onPointerMove = useCallback((e: PointerEvent) => {
+    if (stampDragState.current && imageState) {
+      e.preventDefault();
+      const { type, startX, startY, startStamp, startAngle, startDist } = stampDragState.current;
+      const rect = containerRef.current!.getBoundingClientRect();
+      const scaleToCanvas = imageState.canvasSize / rect.width;
+      
+      if (type === 'move') {
+        const dx = (e.clientX - startX) * scaleToCanvas;
+        const dy = (e.clientY - startY) * scaleToCanvas;
+        setStamp({ ...startStamp, x: startStamp.x + dx, y: startStamp.y + dy });
+        setCanSave(true);
+      } else if (type === 'scaleRotate') {
+        const centerX = rect.left + (startStamp.x / imageState.canvasSize) * rect.width;
+        const centerY = rect.top + (startStamp.y / imageState.canvasSize) * rect.width;
+        
+        const currentAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
+        const currentDist = Math.hypot(e.clientY - centerY, e.clientX - centerX);
+        
+        let deltaAngle = (currentAngle - startAngle) * (180 / Math.PI);
+        const newScale = startStamp.scale * (currentDist / startDist);
+        
+        setStamp({ 
+          ...startStamp, 
+          angle: startStamp.angle + deltaAngle,
+          scale: Math.max(0.2, newScale)
+        });
+        setCanSave(true);
+      }
+      return;
+    }
+
     if (!dragState.current || !imageState) return;
     e.preventDefault();
 
@@ -448,6 +561,12 @@ export default function App() {
   }, [imageState, isSquareCrop]);
 
   const onPointerUp = useCallback((e: PointerEvent) => {
+    if (stampDragState.current) {
+      try {
+        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch (err) {}
+      stampDragState.current = null;
+    }
     if (dragState.current) {
       try {
         (e.target as HTMLElement).releasePointerCapture(e.pointerId);
@@ -484,66 +603,119 @@ export default function App() {
         background: 'radial-gradient(circle at top left, #1e293b, #020617), radial-gradient(circle at bottom right, #1e1b4b, #020617)'
       }}
     >
-      <header className="h-16 flex items-center justify-between px-4 sm:px-6 bg-white/5 backdrop-blur-xl border-b border-white/10 z-50 shrink-0">
-        <div className="flex items-center gap-3">
-          <img src={`${import.meta.env.BASE_URL}SakanaTrimming.jpg`} alt="SakanaTrimming" className="h-10 w-auto rounded-lg object-contain" />
-          <h1 className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">
-            SakanaTrimming
-          </h1>
-        </div>
-      </header>
+      {!(imageState && !previewDataUrl) && (
+        <header className="h-16 flex items-center justify-between px-4 sm:px-6 bg-white/5 backdrop-blur-xl border-b border-white/10 z-50 shrink-0">
+          <div className="flex items-center gap-3">
+            <img src={`${import.meta.env.BASE_URL}SakanaTrimming.jpg`} alt="SakanaTrimming" className="h-10 w-auto rounded-lg object-contain" />
+            <h1 className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">
+              SakanaTrimming
+            </h1>
+          </div>
+        </header>
+      )}
 
       {imageState && !previewDataUrl && (
-        <div className="flex items-center justify-center gap-3 sm:gap-6 py-3 px-4 bg-[#0f172a] border-b border-white/10 shrink-0 z-40 w-full overflow-x-auto">
-          <label className="flex items-center gap-2 cursor-pointer bg-black/30 px-3 py-1.5 rounded-full border border-white/10 hover:bg-black/50 transition-colors shrink-0">
-            <input 
-              type="checkbox" 
-              checked={isSquareCrop} 
-              onChange={(e) => setIsSquareCrop(e.target.checked)}
-              className="w-4 h-4 text-blue-600 rounded border-white/20 bg-black/30 focus:ring-blue-500 cursor-pointer"
-            />
-            <span className="text-xs font-semibold text-slate-300 whitespace-nowrap">選択範囲を正方形に固定</span>
-          </label>
+        <div className="flex flex-col items-center gap-3 py-3 px-4 bg-[#0f172a] border-b border-white/10 shrink-0 z-40 w-full overflow-x-auto">
+          {/* 上段：基本設定 */}
+          <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 w-full">
+            <label className="flex items-center gap-2 cursor-pointer bg-black/30 px-3 py-1.5 rounded-full border border-white/10 hover:bg-black/50 transition-colors shrink-0">
+              <input 
+                type="checkbox" 
+                checked={isSquareCrop} 
+                onChange={(e) => setIsSquareCrop(e.target.checked)}
+                className="w-4 h-4 text-blue-600 rounded border-white/20 bg-black/30 focus:ring-blue-500 cursor-pointer"
+              />
+              <span className="text-xs font-semibold text-slate-300 whitespace-nowrap">選択範囲を正方形に固定</span>
+            </label>
 
-          <div className="flex items-center gap-2 px-2 sm:px-3 py-1.5 bg-black/30 rounded-full border border-white/10 shrink-0">
-            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">背景色</label>
-            <button
-              onClick={() => setIsEyedropperActive(!isEyedropperActive)}
-              className={`p-1.5 rounded-md transition-colors ${isEyedropperActive ? 'bg-blue-500 text-white' : 'text-slate-300 hover:bg-white/10'}`}
-              title="画像から色を抽出"
-            >
-              <Pipette className="w-4 h-4" />
-            </button>
-            <div className="flex items-center">
-              <select
-                value={bgColor}
-                onChange={(e) => {
-                  setBgColor(e.target.value);
-                  setCanSave(true);
-                }}
-                className="bg-transparent text-sm focus:outline-none cursor-pointer text-slate-100"
+            <div className="flex items-center gap-2 px-2 sm:px-3 py-1.5 bg-black/30 rounded-full border border-white/10 shrink-0">
+              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">背景色</label>
+              <button
+                onClick={() => setIsEyedropperActive(!isEyedropperActive)}
+                className={`p-1.5 rounded-md transition-colors ${isEyedropperActive ? 'bg-blue-500 text-white' : 'text-slate-300 hover:bg-white/10'}`}
+                title="画像から色を抽出"
               >
-                {Object.entries(COLORS).map(([name, hex]) => (
-                  <option key={name} value={hex} className="bg-slate-800 text-white">{name}</option>
-                ))}
-                {!Object.values(COLORS).includes(bgColor) && (
-                  <option value={bgColor} className="bg-slate-800 text-white">カスタム</option>
-                )}
-              </select>
-              <label className="cursor-pointer ml-2 flex items-center">
-                <div className="w-5 h-5 rounded-full border border-white/40 shadow-inner" style={{ backgroundColor: bgColor }} />
-                <input
-                  type="color"
+                <Pipette className="w-4 h-4" />
+              </button>
+              <div className="flex items-center">
+                <select
                   value={bgColor}
                   onChange={(e) => {
-                    setBgColor(e.target.value.toUpperCase());
+                    setBgColor(e.target.value);
                     setCanSave(true);
                   }}
-                  className="sr-only"
-                />
-              </label>
+                  className="bg-transparent text-sm focus:outline-none cursor-pointer text-slate-100"
+                >
+                  {Object.entries(COLORS).map(([name, hex]) => (
+                    <option key={name} value={hex} className="bg-slate-800 text-white">{name}</option>
+                  ))}
+                  {!Object.values(COLORS).includes(bgColor) && (
+                    <option value={bgColor} className="bg-slate-800 text-white">カスタム</option>
+                  )}
+                </select>
+                <label className="cursor-pointer ml-2 flex items-center">
+                  <div className="w-5 h-5 rounded-full border border-white/40 shadow-inner" style={{ backgroundColor: bgColor }} />
+                  <input
+                    type="color"
+                    value={bgColor}
+                    onChange={(e) => {
+                      setBgColor(e.target.value.toUpperCase());
+                      setCanSave(true);
+                    }}
+                    className="sr-only"
+                  />
+                </label>
+              </div>
             </div>
           </div>
+
+          {/* 下段：メッセージ追加 */}
+          <fieldset className="w-full min-w-0 max-w-lg border border-white/20 rounded-xl px-2 sm:px-4 pb-3 pt-1 mt-1 mb-2">
+            <legend className="text-xs font-semibold text-slate-400 px-2 uppercase tracking-wider">メッセージ</legend>
+            <div className="flex flex-row items-center gap-1.5 sm:gap-2 w-full mt-1">
+              <input
+                type="text"
+                value={stampInput}
+                onChange={(e) => setStampInput(e.target.value)}
+                className="flex-1 w-full min-w-[80px] h-9 bg-slate-800/50 text-white px-2 sm:px-3 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500/50 border border-white/10 text-sm placeholder-slate-500"
+                placeholder="文字を入力..."
+              />
+              
+              <div className="flex items-center shrink-0 bg-black/20 h-9 px-1.5 sm:px-2 rounded-md border border-white/10">
+                <select
+                  value={stampColor}
+                  onChange={(e) => setStampColor(e.target.value)}
+                  className="bg-transparent text-sm focus:outline-none cursor-pointer text-slate-100 w-10 sm:w-16"
+                >
+                  {Object.entries(COLORS).map(([name, hex]) => (
+                    <option key={name} value={hex} className="bg-slate-800 text-white">{name}</option>
+                  ))}
+                  {!Object.values(COLORS).includes(stampColor) && (
+                    <option value={stampColor} className="bg-slate-800 text-white">ｶｽﾀﾑ</option>
+                  )}
+                </select>
+                <label className="cursor-pointer ml-1 flex items-center">
+                  <div className="w-5 h-5 rounded-full border border-white/40 shadow-inner" style={{ backgroundColor: stampColor }} />
+                  <input
+                    type="color"
+                    value={stampColor}
+                    onChange={(e) => setStampColor(e.target.value.toUpperCase())}
+                    className="sr-only"
+                  />
+                </label>
+              </div>
+              
+              <button
+                onClick={() => {
+                  const text = stampInput.trim() || '🐟';
+                  addStamp(text, stampColor);
+                }}
+                className="shrink-0 px-3 sm:px-5 py-2 h-9 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-full transition-colors whitespace-nowrap shadow-lg shadow-blue-600/20"
+              >
+                {stamp ? '変更' : '追加'}
+              </button>
+            </div>
+          </fieldset>
         </div>
       )}
 
@@ -675,6 +847,38 @@ export default function App() {
                       <div className="w-4 h-4 bg-blue-500 rounded-full shadow-lg pointer-events-none" />
                     </div>
                   ))}
+                </div>
+              )}
+
+              {stamp && (
+                <div
+                  className="absolute z-[60] touch-none group flex items-center justify-center"
+                  style={{
+                    left: `${(stamp.x / imageState.canvasSize) * 100}%`,
+                    top: `${(stamp.y / imageState.canvasSize) * 100}%`,
+                    width: `${15 * stamp.scale}%`,
+                    height: `${15 * stamp.scale}%`,
+                    transform: `translate(-50%, -50%) rotate(${stamp.angle}deg)`,
+                  }}
+                  onPointerDown={(e) => handleStampPointerDown(e, 'move')}
+                >
+                  <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md overflow-visible">
+                    <text x="50" y="50" fontSize="80" textAnchor="middle" dominantBaseline="central" fill={stamp.color} fontWeight="bold" style={{ userSelect: 'none' }}>
+                      {stamp.text}
+                    </text>
+                  </svg>
+                  <button
+                    className="absolute -top-4 -right-4 w-7 h-7 bg-red-500 text-white rounded-full flex items-center justify-center shadow-md opacity-0 group-[.touch-none]:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity border-2 border-white cursor-pointer"
+                    onPointerDown={(e) => { e.stopPropagation(); setStamp(null); }}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                  <div
+                    className="absolute -bottom-4 -right-4 w-7 h-7 bg-blue-500 text-white rounded-full flex items-center justify-center shadow-md opacity-0 group-[.touch-none]:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity cursor-nwse-resize border-2 border-white"
+                    onPointerDown={(e) => handleStampPointerDown(e, 'scaleRotate')}
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </div>
                 </div>
               )}
 
