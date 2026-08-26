@@ -43,10 +43,12 @@ export default function App() {
   const [imageState, setImageState] = useState<ImageState | null>(null);
   const [bgColor, setBgColor] = useState<string>('#FFFFFF');
   const [isSquareCrop, setIsSquareCrop] = useState<boolean>(true);
+  const [isSplitGeneration, setIsSplitGeneration] = useState<boolean>(false);
+  const isEffectiveSquareCrop = isSquareCrop && !isSplitGeneration;
   const [cropBox, setCropBox] = useState<CropBox | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [canSave, setCanSave] = useState<boolean>(true);
-  const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
+  const [previewDataUrls, setPreviewDataUrls] = useState<string[] | null>(null);
   const [isEyedropperActive, setIsEyedropperActive] = useState<boolean>(false);
   const [stamp, setStamp] = useState<StampState | null>(null);
   const [stampInput, setStampInput] = useState<string>('🐟');
@@ -62,7 +64,7 @@ export default function App() {
     startY: number;
     startCrop: CropBox;
     scale: number;
-    initialSnap: { top: boolean; bottom: boolean; left: boolean; right: boolean };
+    initialSnap: { top: boolean; bottom: boolean; left: boolean; right: boolean; ratio?: boolean };
   } | null>(null);
 
   const stampDragState = useRef<{
@@ -115,7 +117,7 @@ export default function App() {
     setImageState(null);
     setCropBox(null);
     setCanSave(true);
-    setPreviewDataUrl(null);
+    setPreviewDataUrls(null);
     setStamp(null);
     setStampInput('🐟');
     setStampColor('#000000');
@@ -125,30 +127,11 @@ export default function App() {
   const executeCrop = () => {
     if (!imageState || !cropBox) return;
 
-    const { element, imgX, imgY, w: imgW, h: imgH } = imageState;
+    const { element, imgX, imgY, w: imgW, h: imgH, canvasSize } = imageState;
     const { x: cx, y: cy, w: cw, h: ch } = cropBox;
 
-    const ix = Math.max(cx, imgX);
-    const iy = Math.max(cy, imgY);
-    const iRight = Math.min(cx + cw, imgX + imgW);
-    const iBottom = Math.min(cy + ch, imgY + imgH);
-
-    const iw = Math.max(0, iRight - ix);
-    const ih = Math.max(0, iBottom - iy);
-
-    let outSize = Math.max(iw, ih);
-    if (outSize === 0) {
-      outSize = Math.max(cw, ch);
-    }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = outSize;
-    canvas.height = outSize;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.fillStyle = bgColor;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const splits = isSplitGeneration ? Math.ceil(ch / cw) : 1;
+    const generatedUrls: string[] = [];
 
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = imgW;
@@ -161,7 +144,7 @@ export default function App() {
         tCtx.save();
         tCtx.translate(stamp.x - imgX, stamp.y - imgY);
         tCtx.rotate((stamp.angle * Math.PI) / 180);
-        const baseSize = imageState.canvasSize * 0.15;
+        const baseSize = canvasSize * 0.15;
         const fontSize = baseSize * stamp.scale * 0.8;
         tCtx.font = `bold ${fontSize}px sans-serif`;
         tCtx.textAlign = 'center';
@@ -172,43 +155,72 @@ export default function App() {
       }
     }
 
-    if (iw > 0 && ih > 0) {
-      const sx = ix - imgX;
-      const sy = iy - imgY;
-      const dx = (outSize - iw) / 2;
-      const dy = (outSize - ih) / 2;
-      ctx.drawImage(tempCanvas, sx, sy, iw, ih, dx, dy, iw, ih);
+    for (let i = 0; i < splits; i++) {
+      const splitCy = cy + i * (isSplitGeneration ? cw : 0);
+      const splitCw = cw;
+      const splitCh = isSplitGeneration ? cw : ch;
+
+      const ix = Math.max(cx, imgX);
+      const iy = Math.max(splitCy, imgY);
+      const iRight = Math.min(cx + splitCw, cx + cw, imgX + imgW);
+      const iBottom = Math.min(splitCy + splitCh, cy + ch, imgY + imgH);
+
+      const iw = Math.max(0, iRight - ix);
+      const ih = Math.max(0, iBottom - iy);
+
+      let outSizeW = splitCw;
+      let outSizeH = splitCh;
+
+      if (!isSplitGeneration) {
+        let outSize = Math.max(iw, ih);
+        if (outSize === 0) outSize = Math.max(cw, ch);
+        outSizeW = outSize;
+        outSizeH = outSize;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = outSizeW;
+      canvas.height = outSizeH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) continue;
+
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      if (iw > 0 && ih > 0) {
+        const sx = ix - imgX;
+        const sy = iy - imgY;
+        let destX = ix - cx;
+        let destY = iy - splitCy;
+
+        if (!isSplitGeneration) {
+          destX = (outSizeW - iw) / 2;
+          destY = (outSizeH - ih) / 2;
+        }
+
+        ctx.drawImage(tempCanvas, sx, sy, iw, ih, destX, destY, iw, ih);
+      }
+
+      generatedUrls.push(canvas.toDataURL('image/jpeg', 0.95));
     }
 
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-    setPreviewDataUrl(dataUrl);
+    setPreviewDataUrls(generatedUrls);
   };
 
   const downloadPreview = async () => {
-    if (!previewDataUrl) return;
+    if (!previewDataUrls || previewDataUrls.length === 0) return;
     
     const now = new Date();
     const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-    const filename = `SakanaTrimming_${date}_${time}.jpg`;
 
     const finishSave = () => {
-      setToastMessage(`画像「${filename}」の保存が完了しました`);
-      setPreviewDataUrl(null);
+      setToastMessage(`画像の保存が完了しました`);
+      setPreviewDataUrls(null);
       if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
       toastTimeoutRef.current = setTimeout(() => {
         setToastMessage(null);
       }, 3000);
-    };
-
-    const fallbackDownload = () => {
-      const a = document.createElement('a');
-      a.href = previewDataUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      finishSave();
     };
 
     const isIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent) || 
@@ -216,37 +228,60 @@ export default function App() {
 
     if (isIOS) {
       try {
-        const byteString = atob(previewDataUrl.split(',')[1]);
-        const mimeString = previewDataUrl.split(',')[0].split(':')[1].split(';')[0];
-        const ab = new ArrayBuffer(byteString.length);
-        const ia = new Uint8Array(ab);
-        for (let i = 0; i < byteString.length; i++) {
-          ia[i] = byteString.charCodeAt(i);
+        const files: File[] = [];
+        for (let i = 0; i < previewDataUrls.length; i++) {
+          const url = previewDataUrls[i];
+          const filename = `SakanaTrimming_${date}_${time}_${String(i + 1).padStart(3, '0')}.jpg`;
+          
+          const byteString = atob(url.split(',')[1]);
+          const mimeString = url.split(',')[0].split(':')[1].split(';')[0];
+          const ab = new ArrayBuffer(byteString.length);
+          const ia = new Uint8Array(ab);
+          for (let j = 0; j < byteString.length; j++) {
+            ia[j] = byteString.charCodeAt(j);
+          }
+          const blob = new Blob([ab], { type: mimeString });
+          files.push(new File([blob], filename, { type: mimeString }));
         }
-        const blob = new Blob([ab], { type: mimeString });
-        const file = new File([blob], filename, { type: mimeString });
 
-        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        if (navigator.share && navigator.canShare && navigator.canShare({ files })) {
           try {
             await navigator.share({
-              files: [file],
-              title: filename,
+              files,
+              title: 'SakanaTrimming',
             });
             finishSave();
+            return;
           } catch (error: any) {
             if (error.name !== 'AbortError') {
               console.error('Share failed:', error);
-              fallbackDownload();
             }
           }
-          return;
         }
       } catch (e) {
-        console.error('Error preparing file for share:', e);
+        console.error('Error preparing files for share:', e);
       }
     }
 
-    fallbackDownload();
+    const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+    
+    for (let i = 0; i < previewDataUrls.length; i++) {
+      const url = previewDataUrls[i];
+      const filename = `SakanaTrimming_${date}_${time}_${String(i + 1).padStart(3, '0')}.jpg`;
+        
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      
+      if (i < previewDataUrls.length - 1) {
+        await delay(300);
+      }
+    }
+    
+    finishSave();
   };
 
   const extractColorFromPointer = (e: React.PointerEvent) => {
@@ -354,6 +389,7 @@ export default function App() {
         bottom: Math.abs((cropBox.y + cropBox.h) - (imageState.imgY + imageState.h)) < 1,
         left: Math.abs(cropBox.x - imageState.imgX) < 1,
         right: Math.abs((cropBox.x + cropBox.w) - (imageState.imgX + imageState.w)) < 1,
+        ratio: isSplitGeneration && Math.abs(cropBox.h / cropBox.w - Math.round(cropBox.h / cropBox.w)) < 0.01,
       }
     };
   };
@@ -414,12 +450,17 @@ export default function App() {
       if (!initialSnap.top && Math.abs(newY - imgY) < snapThresh) newY = imgY;
       if (!initialSnap.bottom && Math.abs(newY + startCrop.h - (imgY + h)) < snapThresh) newY = imgY + h - startCrop.h;
 
-      newX = Math.max(0, Math.min(newX, canvasSize - startCrop.w));
-      newY = Math.max(0, Math.min(newY, canvasSize - startCrop.h));
+      if (isSplitGeneration) {
+        newX = Math.max(imgX, Math.min(newX, imgX + w - startCrop.w));
+        newY = Math.max(imgY, Math.min(newY, imgY + h - startCrop.h));
+      } else {
+        newX = Math.max(0, Math.min(newX, canvasSize - startCrop.w));
+        newY = Math.max(0, Math.min(newY, canvasSize - startCrop.h));
+      }
     } else {
       const minSize = 20 * scale;
 
-      if (isSquareCrop) {
+      if (isEffectiveSquareCrop) {
         let propSize = startCrop.w;
         let effType = type;
         if (type === 'e' || type === 's') effType = 'se';
@@ -516,12 +557,22 @@ export default function App() {
 
         let maxW = canvasSize;
         let maxH = canvasSize;
-        if (type === 'se' || type === 'e') { maxW = canvasSize - startCrop.x; }
-        else if (type === 'nw' || type === 'w' || type === 'sw') { maxW = startCrop.x + startCrop.w; }
-        else if (type === 'ne') { maxW = canvasSize - startCrop.x; }
 
-        if (type === 'se' || type === 'sw' || type === 's') { maxH = canvasSize - startCrop.y; }
-        else if (type === 'nw' || type === 'ne' || type === 'n') { maxH = startCrop.y + startCrop.h; }
+        if (isSplitGeneration) {
+          if (type === 'se' || type === 'e') { maxW = imgX + w - startCrop.x; }
+          else if (type === 'nw' || type === 'w' || type === 'sw') { maxW = startCrop.x + startCrop.w - imgX; }
+          else if (type === 'ne') { maxW = imgX + w - startCrop.x; }
+
+          if (type === 'se' || type === 'sw' || type === 's') { maxH = imgY + h - startCrop.y; }
+          else if (type === 'nw' || type === 'ne' || type === 'n') { maxH = startCrop.y + startCrop.h - imgY; }
+        } else {
+          if (type === 'se' || type === 'e') { maxW = canvasSize - startCrop.x; }
+          else if (type === 'nw' || type === 'w' || type === 'sw') { maxW = startCrop.x + startCrop.w; }
+          else if (type === 'ne') { maxW = canvasSize - startCrop.x; }
+
+          if (type === 'se' || type === 'sw' || type === 's') { maxH = canvasSize - startCrop.y; }
+          else if (type === 'nw' || type === 'ne' || type === 'n') { maxH = startCrop.y + startCrop.h; }
+        }
 
         propW = Math.max(minSize, Math.min(propW, maxW));
         propH = Math.max(minSize, Math.min(propH, maxH));
@@ -537,6 +588,20 @@ export default function App() {
         }
         if (type === 'nw' || type === 'ne' || type === 'n') {
           if (!initialSnap.top && Math.abs((startCrop.y + startCrop.h - propH) - imgY) < snapThresh) propH = startCrop.y + startCrop.h - imgY;
+        }
+
+        if (isSplitGeneration && !initialSnap.ratio) {
+          let targetRatio = Math.round(propH / propW);
+          if (targetRatio < 1) targetRatio = 1;
+
+          const hDiff = Math.abs(propH - propW * targetRatio);
+          const wDiff = Math.abs(propW - propH / targetRatio);
+
+          if (hDiff < snapThresh && hDiff <= wDiff) {
+            propH = propW * targetRatio;
+          } else if (wDiff < snapThresh) {
+            propW = propH / targetRatio;
+          }
         }
 
         propW = Math.max(minSize, Math.min(propW, maxW));
@@ -558,7 +623,7 @@ export default function App() {
 
     setCropBox({ x: newX, y: newY, w: newW, h: newH });
     setCanSave(true);
-  }, [imageState, isSquareCrop]);
+  }, [imageState, isEffectiveSquareCrop, isSplitGeneration]);
 
   const onPointerUp = useCallback((e: PointerEvent) => {
     if (stampDragState.current) {
@@ -588,13 +653,36 @@ export default function App() {
 
   useEffect(() => {
     setCropBox((prev) => {
-      if (isSquareCrop && prev && prev.w !== prev.h) {
+      if (!prev) return prev;
+      let newW = prev.w;
+      let newH = prev.h;
+      let newX = prev.x;
+      let newY = prev.y;
+
+      if (isEffectiveSquareCrop && prev.w !== prev.h) {
         const minDim = Math.min(prev.w, prev.h);
-        return { ...prev, w: minDim, h: minDim };
+        newW = minDim;
+        newH = minDim;
+      }
+
+      if (isSplitGeneration && imageState) {
+        const { imgX, imgY, w: imgW, h: imgH } = imageState;
+        
+        if (newW > imgW) newW = imgW;
+        if (newH > imgH) newH = imgH;
+        
+        if (newX < imgX) newX = imgX;
+        if (newY < imgY) newY = imgY;
+        if (newX + newW > imgX + imgW) newX = imgX + imgW - newW;
+        if (newY + newH > imgY + imgH) newY = imgY + imgH - newH;
+      }
+
+      if (newW !== prev.w || newH !== prev.h || newX !== prev.x || newY !== prev.y) {
+        return { x: newX, y: newY, w: newW, h: newH };
       }
       return prev;
     });
-  }, [isSquareCrop]);
+  }, [isEffectiveSquareCrop, isSplitGeneration, imageState]);
 
   return (
     <div 
@@ -603,7 +691,7 @@ export default function App() {
         background: 'radial-gradient(circle at top left, #1e293b, #020617), radial-gradient(circle at bottom right, #1e1b4b, #020617)'
       }}
     >
-      {!(imageState && !previewDataUrl) && (
+      {!(imageState && !previewDataUrls) && (
         <header className="h-16 flex items-center justify-between px-4 sm:px-6 bg-white/5 backdrop-blur-xl border-b border-white/10 z-50 shrink-0">
           <div className="flex items-center gap-3">
             <img src={`${import.meta.env.BASE_URL}SakanaTrimming.jpg`} alt="SakanaTrimming" className="h-10 w-auto rounded-lg object-contain" />
@@ -614,7 +702,7 @@ export default function App() {
         </header>
       )}
 
-      {imageState && !previewDataUrl && (
+      {imageState && !previewDataUrls && (
         <div className="flex flex-col items-center gap-3 py-3 px-4 bg-[#0f172a] border-b border-white/10 shrink-0 z-40 w-full overflow-x-auto">
           {/* 上段：基本設定 */}
           <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 w-full">
@@ -623,9 +711,25 @@ export default function App() {
                 type="checkbox" 
                 checked={isSquareCrop} 
                 onChange={(e) => setIsSquareCrop(e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded border-white/20 bg-black/30 focus:ring-blue-500 cursor-pointer"
+                disabled={isSplitGeneration}
+                className="w-4 h-4 text-blue-600 rounded border-white/20 bg-black/30 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
               />
-              <span className="text-xs font-semibold text-slate-300 whitespace-nowrap">選択範囲を正方形に固定</span>
+              <span className={`text-xs font-semibold whitespace-nowrap ${isSplitGeneration ? 'text-slate-500' : 'text-slate-300'}`}>選択範囲を正方形に固定</span>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer bg-black/30 px-3 py-1.5 rounded-full border border-green-500/30 hover:bg-black/50 transition-colors shrink-0">
+              <input 
+                type="checkbox" 
+                checked={isSplitGeneration} 
+                onChange={(e) => setIsSplitGeneration(e.target.checked)}
+                className="w-4 h-4 text-green-600 rounded border-white/20 bg-black/30 focus:ring-green-500 cursor-pointer"
+              />
+              <span className="text-xs font-semibold text-slate-300 whitespace-nowrap">
+                分割生成
+                {isSplitGeneration && cropBox && (
+                  <span className="ml-1.5 text-green-400">({Math.ceil(cropBox.h / cropBox.w)}分割)</span>
+                )}
+              </span>
             </label>
 
             <div className="flex items-center gap-2 px-2 sm:px-3 py-1.5 bg-black/30 rounded-full border border-white/10 shrink-0">
@@ -724,16 +828,25 @@ export default function App() {
         <div className="absolute top-1/4 -left-20 w-96 h-96 bg-blue-500/10 rounded-full blur-[120px] pointer-events-none"></div>
         <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none"></div>
 
-        {previewDataUrl ? (
+        {previewDataUrls ? (
           <div className="relative z-10 w-full max-w-[80vh] sm:max-w-[400px] mx-auto flex flex-col items-center select-none">
             <h2 className="text-xl font-bold mb-4 text-white">プレビュー</h2>
-            <div className="w-full aspect-square rounded-sm overflow-hidden flex items-center justify-center shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-white/10">
-              <img src={previewDataUrl} alt="Preview" className="w-full h-full object-contain" />
+            <div className="w-full flex flex-col gap-4 overflow-y-auto max-h-[60vh] p-4 rounded-lg border border-white/10 bg-black/20">
+              {previewDataUrls.map((url, idx) => (
+                <div key={idx} className="w-full aspect-square rounded-sm overflow-hidden flex items-center justify-center shadow-[0_0_20px_rgba(0,0,0,0.5)] border border-white/20 shrink-0 relative">
+                  {isSplitGeneration && (
+                    <div className="absolute top-2 left-2 bg-black/60 text-white text-xs font-bold px-2 py-1 rounded">
+                      {idx + 1}
+                    </div>
+                  )}
+                  <img src={url} alt={`Preview ${idx + 1}`} className="w-full h-full object-contain" />
+                </div>
+              ))}
             </div>
             
             <div className="flex items-center justify-center gap-3 sm:gap-4 w-full mt-6 sm:mt-8">
               <button
-                onClick={() => setPreviewDataUrl(null)}
+                onClick={() => setPreviewDataUrls(null)}
                 className="px-4 py-2.5 text-sm font-medium hover:bg-white/5 rounded-lg transition-colors border border-transparent flex items-center gap-1.5 text-slate-300"
               >
                 <X className="w-4 h-4" />
@@ -745,7 +858,7 @@ export default function App() {
                 className="px-5 py-2.5 text-sm font-semibold rounded-lg transition-all border flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white shadow-lg shadow-green-600/20 border-green-400/20"
               >
                 <Download className="w-4 h-4" />
-                <span>保存</span>
+                <span>{previewDataUrls.length > 1 ? `一括保存 (${previewDataUrls.length}枚)` : '保存'}</span>
               </button>
             </div>
           </div>
@@ -810,8 +923,19 @@ export default function App() {
                   }}
                   onPointerDown={(e) => onPointerDown(e, 'move')}
                 >
-                  <div className="absolute inset-0 pointer-events-none border border-blue-500/40 m-auto w-1/3 h-full" />
-                  <div className="absolute inset-0 pointer-events-none border border-blue-500/40 m-auto w-full h-1/3" />
+                  {!isSplitGeneration && (
+                    <>
+                      <div className="absolute inset-0 pointer-events-none border border-blue-500/40 m-auto w-1/3 h-full" />
+                      <div className="absolute inset-0 pointer-events-none border border-blue-500/40 m-auto w-full h-1/3" />
+                    </>
+                  )}
+                  {isSplitGeneration && Array.from({ length: Math.ceil(cropBox.h / cropBox.w) - 1 }).map((_, i) => (
+                    <div 
+                      key={i} 
+                      className="absolute left-0 w-full border-t-[3px] border-green-500 pointer-events-none shadow-[0_0_10px_rgba(0,0,0,0.5)]"
+                      style={{ top: `${((i + 1) * cropBox.w / cropBox.h) * 100}%` }}
+                    />
+                  ))}
 
                   {(['n', 's', 'e', 'w'] as const).map((type) => {
                     const isV = type === 'n' || type === 's';
@@ -920,7 +1044,7 @@ export default function App() {
         )}
       </main>
 
-      {imageState && !previewDataUrl && (
+      {imageState && !previewDataUrls && (
         <footer className="h-12 px-4 sm:px-6 hidden sm:flex items-center justify-center sm:justify-start bg-white/5 border-t border-white/10 shrink-0">
           <div className="flex items-center gap-4 text-[11px] font-medium text-slate-500 uppercase tracking-widest">
             <span>Canvas: {cropBox?.w ? Math.round(cropBox.w) : '-'} x {cropBox?.h ? Math.round(cropBox.h) : '-'}px</span>
