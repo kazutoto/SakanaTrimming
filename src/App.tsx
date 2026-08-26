@@ -43,11 +43,12 @@ export default function App() {
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const dragState = useRef<{
-    type: 'move' | 'nw' | 'ne' | 'sw' | 'se';
+    type: 'move' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w';
     startX: number;
     startY: number;
     startCrop: CropBox;
     scale: number;
+    initialSnap: { top: boolean; bottom: boolean; left: boolean; right: boolean };
   } | null>(null);
 
   const handleFile = (file: File) => {
@@ -197,7 +198,7 @@ export default function App() {
     fallbackDownload();
   };
 
-  const onPointerDown = (e: React.PointerEvent, type: 'move' | 'nw' | 'ne' | 'sw' | 'se') => {
+  const onPointerDown = (e: React.PointerEvent, type: 'move' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w') => {
     e.stopPropagation();
     if (!containerRef.current || !cropBox || !imageState) return;
     
@@ -210,7 +211,13 @@ export default function App() {
       startX: e.clientX,
       startY: e.clientY,
       startCrop: { ...cropBox },
-      scale
+      scale,
+      initialSnap: {
+        top: Math.abs(cropBox.y - imageState.imgY) < 1,
+        bottom: Math.abs((cropBox.y + cropBox.h) - (imageState.imgY + imageState.h)) < 1,
+        left: Math.abs(cropBox.x - imageState.imgX) < 1,
+        right: Math.abs((cropBox.x + cropBox.w) - (imageState.imgX + imageState.w)) < 1,
+      }
     };
   };
 
@@ -218,12 +225,12 @@ export default function App() {
     if (!dragState.current || !imageState) return;
     e.preventDefault();
 
-    const { type, startX, startY, startCrop, scale } = dragState.current;
+    const { type, startX, startY, startCrop, scale, initialSnap } = dragState.current;
     const { canvasSize, imgX, imgY, w, h } = imageState;
 
     const dx = (e.clientX - startX) * scale;
     const dy = (e.clientY - startY) * scale;
-    const snapThresh = 10 * scale;
+    const snapThresh = 15 * scale;
 
     let newX = startCrop.x;
     let newY = startCrop.y;
@@ -234,10 +241,10 @@ export default function App() {
       newX = startCrop.x + dx;
       newY = startCrop.y + dy;
 
-      if (Math.abs(newX - imgX) < snapThresh) newX = imgX;
-      if (Math.abs(newX + startCrop.w - (imgX + w)) < snapThresh) newX = imgX + w - startCrop.w;
-      if (Math.abs(newY - imgY) < snapThresh) newY = imgY;
-      if (Math.abs(newY + startCrop.h - (imgY + h)) < snapThresh) newY = imgY + h - startCrop.h;
+      if (!initialSnap.left && Math.abs(newX - imgX) < snapThresh) newX = imgX;
+      if (!initialSnap.right && Math.abs(newX + startCrop.w - (imgX + w)) < snapThresh) newX = imgX + w - startCrop.w;
+      if (!initialSnap.top && Math.abs(newY - imgY) < snapThresh) newY = imgY;
+      if (!initialSnap.bottom && Math.abs(newY + startCrop.h - (imgY + h)) < snapThresh) newY = imgY + h - startCrop.h;
 
       newX = Math.max(0, Math.min(newX, canvasSize - startCrop.w));
       newY = Math.max(0, Math.min(newY, canvasSize - startCrop.h));
@@ -246,44 +253,86 @@ export default function App() {
 
       if (isSquareCrop) {
         let propSize = startCrop.w;
+        let effType = type;
+        if (type === 'e' || type === 's') effType = 'se';
+        if (type === 'w' || type === 'n') effType = 'nw';
+
         if (type === 'se') propSize += Math.max(dx, dy);
         else if (type === 'nw') propSize += Math.max(-dx, -dy);
         else if (type === 'ne') propSize += Math.max(dx, -dy);
         else if (type === 'sw') propSize += Math.max(-dx, dy);
+        else if (type === 'e') propSize += dx;
+        else if (type === 's') propSize += dy;
+        else if (type === 'w') propSize += -dx;
+        else if (type === 'n') propSize += -dy;
 
         let maxSize = canvasSize;
-        if (type === 'se') maxSize = Math.min(canvasSize - startCrop.x, canvasSize - startCrop.y);
-        else if (type === 'nw') maxSize = Math.min(startCrop.x + startCrop.w, startCrop.y + startCrop.h);
-        else if (type === 'ne') maxSize = Math.min(canvasSize - startCrop.x, startCrop.y + startCrop.h);
-        else if (type === 'sw') maxSize = Math.min(startCrop.x + startCrop.w, canvasSize - startCrop.y);
+        if (effType === 'se') maxSize = Math.min(canvasSize - startCrop.x, canvasSize - startCrop.y);
+        else if (effType === 'nw') maxSize = Math.min(startCrop.x + startCrop.w, startCrop.y + startCrop.h);
+        else if (effType === 'ne') maxSize = Math.min(canvasSize - startCrop.x, startCrop.y + startCrop.h);
+        else if (effType === 'sw') maxSize = Math.min(startCrop.x + startCrop.w, canvasSize - startCrop.y);
 
         propSize = Math.max(minSize, Math.min(propSize, maxSize));
 
-        if (type === 'se') {
+        if (effType === 'se') {
           const distX = Math.abs((startCrop.x + propSize) - (imgX + w));
           const distY = Math.abs((startCrop.y + propSize) - (imgY + h));
-          if (distX < snapThresh && distX <= distY) propSize = (imgX + w) - startCrop.x;
-          else if (distY < snapThresh) propSize = (imgY + h) - startCrop.y;
-        } else if (type === 'nw') {
+          const snapRight = !initialSnap.right && distX < snapThresh;
+          const snapBottom = !initialSnap.bottom && distY < snapThresh;
+          
+          if (type === 'e' && snapRight) propSize = (imgX + w) - startCrop.x;
+          else if (type === 's' && snapBottom) propSize = (imgY + h) - startCrop.y;
+          else if (snapRight && snapBottom) propSize = distX <= distY ? (imgX + w) - startCrop.x : (imgY + h) - startCrop.y;
+          else if (snapRight) propSize = (imgX + w) - startCrop.x;
+          else if (snapBottom) propSize = (imgY + h) - startCrop.y;
+        } else if (effType === 'nw') {
           const distX = Math.abs((startCrop.x + startCrop.w - propSize) - imgX);
           const distY = Math.abs((startCrop.y + startCrop.h - propSize) - imgY);
-          if (distX < snapThresh && distX <= distY) propSize = startCrop.x + startCrop.w - imgX;
-          else if (distY < snapThresh) propSize = startCrop.y + startCrop.h - imgY;
-        } else if (type === 'ne') {
+          const snapLeft = !initialSnap.left && distX < snapThresh;
+          const snapTop = !initialSnap.top && distY < snapThresh;
+
+          if (type === 'w' && snapLeft) propSize = startCrop.x + startCrop.w - imgX;
+          else if (type === 'n' && snapTop) propSize = startCrop.y + startCrop.h - imgY;
+          else if (snapLeft && snapTop) propSize = distX <= distY ? startCrop.x + startCrop.w - imgX : startCrop.y + startCrop.h - imgY;
+          else if (snapLeft) propSize = startCrop.x + startCrop.w - imgX;
+          else if (snapTop) propSize = startCrop.y + startCrop.h - imgY;
+        } else if (effType === 'ne') {
           const distX = Math.abs((startCrop.x + propSize) - (imgX + w));
           const distY = Math.abs((startCrop.y + startCrop.h - propSize) - imgY);
-          if (distX < snapThresh && distX <= distY) propSize = (imgX + w) - startCrop.x;
-          else if (distY < snapThresh) propSize = startCrop.y + startCrop.h - imgY;
-        } else if (type === 'sw') {
+          const snapRight = !initialSnap.right && distX < snapThresh;
+          const snapTop = !initialSnap.top && distY < snapThresh;
+
+          if (snapRight && snapTop) propSize = distX <= distY ? (imgX + w) - startCrop.x : startCrop.y + startCrop.h - imgY;
+          else if (snapRight) propSize = (imgX + w) - startCrop.x;
+          else if (snapTop) propSize = startCrop.y + startCrop.h - imgY;
+        } else if (effType === 'sw') {
           const distX = Math.abs((startCrop.x + startCrop.w - propSize) - imgX);
           const distY = Math.abs((startCrop.y + propSize) - (imgY + h));
-          if (distX < snapThresh && distX <= distY) propSize = startCrop.x + startCrop.w - imgX;
-          else if (distY < snapThresh) propSize = (imgY + h) - startCrop.y;
+          const snapLeft = !initialSnap.left && distX < snapThresh;
+          const snapBottom = !initialSnap.bottom && distY < snapThresh;
+
+          if (snapLeft && snapBottom) propSize = distX <= distY ? startCrop.x + startCrop.w - imgX : (imgY + h) - startCrop.y;
+          else if (snapLeft) propSize = startCrop.x + startCrop.w - imgX;
+          else if (snapBottom) propSize = (imgY + h) - startCrop.y;
         }
 
         propSize = Math.max(minSize, Math.min(propSize, maxSize));
         newW = propSize;
         newH = propSize;
+
+        if (effType === 'se') {
+          newX = startCrop.x;
+          newY = startCrop.y;
+        } else if (effType === 'nw') {
+          newX = startCrop.x + startCrop.w - newW;
+          newY = startCrop.y + startCrop.h - newH;
+        } else if (effType === 'ne') {
+          newX = startCrop.x;
+          newY = startCrop.y + startCrop.h - newH;
+        } else if (effType === 'sw') {
+          newX = startCrop.x + startCrop.w - newW;
+          newY = startCrop.y;
+        }
       } else {
         let propW = startCrop.w;
         let propH = startCrop.h;
@@ -292,29 +341,34 @@ export default function App() {
         else if (type === 'nw') { propW -= dx; propH -= dy; }
         else if (type === 'ne') { propW += dx; propH -= dy; }
         else if (type === 'sw') { propW -= dx; propH += dy; }
+        else if (type === 'e') { propW += dx; }
+        else if (type === 'w') { propW -= dx; }
+        else if (type === 's') { propH += dy; }
+        else if (type === 'n') { propH -= dy; }
 
         let maxW = canvasSize;
         let maxH = canvasSize;
-        if (type === 'se') { maxW = canvasSize - startCrop.x; maxH = canvasSize - startCrop.y; }
-        else if (type === 'nw') { maxW = startCrop.x + startCrop.w; maxH = startCrop.y + startCrop.h; }
-        else if (type === 'ne') { maxW = canvasSize - startCrop.x; maxH = startCrop.y + startCrop.h; }
-        else if (type === 'sw') { maxW = startCrop.x + startCrop.w; maxH = canvasSize - startCrop.y; }
+        if (type === 'se' || type === 'e') { maxW = canvasSize - startCrop.x; }
+        else if (type === 'nw' || type === 'w' || type === 'sw') { maxW = startCrop.x + startCrop.w; }
+        else if (type === 'ne') { maxW = canvasSize - startCrop.x; }
+
+        if (type === 'se' || type === 'sw' || type === 's') { maxH = canvasSize - startCrop.y; }
+        else if (type === 'nw' || type === 'ne' || type === 'n') { maxH = startCrop.y + startCrop.h; }
 
         propW = Math.max(minSize, Math.min(propW, maxW));
         propH = Math.max(minSize, Math.min(propH, maxH));
 
-        if (type === 'se') {
-          if (Math.abs((startCrop.x + propW) - (imgX + w)) < snapThresh) propW = (imgX + w) - startCrop.x;
-          if (Math.abs((startCrop.y + propH) - (imgY + h)) < snapThresh) propH = (imgY + h) - startCrop.y;
-        } else if (type === 'nw') {
-          if (Math.abs((startCrop.x + startCrop.w - propW) - imgX) < snapThresh) propW = startCrop.x + startCrop.w - imgX;
-          if (Math.abs((startCrop.y + startCrop.h - propH) - imgY) < snapThresh) propH = startCrop.y + startCrop.h - imgY;
-        } else if (type === 'ne') {
-          if (Math.abs((startCrop.x + propW) - (imgX + w)) < snapThresh) propW = (imgX + w) - startCrop.x;
-          if (Math.abs((startCrop.y + startCrop.h - propH) - imgY) < snapThresh) propH = startCrop.y + startCrop.h - imgY;
-        } else if (type === 'sw') {
-          if (Math.abs((startCrop.x + startCrop.w - propW) - imgX) < snapThresh) propW = startCrop.x + startCrop.w - imgX;
-          if (Math.abs((startCrop.y + propH) - (imgY + h)) < snapThresh) propH = (imgY + h) - startCrop.y;
+        if (type === 'se' || type === 'ne' || type === 'e') {
+          if (!initialSnap.right && Math.abs((startCrop.x + propW) - (imgX + w)) < snapThresh) propW = (imgX + w) - startCrop.x;
+        }
+        if (type === 'nw' || type === 'sw' || type === 'w') {
+          if (!initialSnap.left && Math.abs((startCrop.x + startCrop.w - propW) - imgX) < snapThresh) propW = startCrop.x + startCrop.w - imgX;
+        }
+        if (type === 'se' || type === 'sw' || type === 's') {
+          if (!initialSnap.bottom && Math.abs((startCrop.y + propH) - (imgY + h)) < snapThresh) propH = (imgY + h) - startCrop.y;
+        }
+        if (type === 'nw' || type === 'ne' || type === 'n') {
+          if (!initialSnap.top && Math.abs((startCrop.y + startCrop.h - propH) - imgY) < snapThresh) propH = startCrop.y + startCrop.h - imgY;
         }
 
         propW = Math.max(minSize, Math.min(propW, maxW));
@@ -322,20 +376,15 @@ export default function App() {
         
         newW = propW;
         newH = propH;
-      }
 
-      if (type === 'se') {
         newX = startCrop.x;
         newY = startCrop.y;
-      } else if (type === 'nw') {
-        newX = startCrop.x + startCrop.w - newW;
-        newY = startCrop.y + startCrop.h - newH;
-      } else if (type === 'ne') {
-        newX = startCrop.x;
-        newY = startCrop.y + startCrop.h - newH;
-      } else if (type === 'sw') {
-        newX = startCrop.x + startCrop.w - newW;
-        newY = startCrop.y;
+        if (type === 'nw' || type === 'sw' || type === 'w') {
+          newX = startCrop.x + startCrop.w - newW;
+        }
+        if (type === 'nw' || type === 'ne' || type === 'n') {
+          newY = startCrop.y + startCrop.h - newH;
+        }
       }
     }
 
@@ -513,10 +562,30 @@ export default function App() {
                   <div className="absolute inset-0 pointer-events-none border border-blue-500/40 m-auto w-1/3 h-full" />
                   <div className="absolute inset-0 pointer-events-none border border-blue-500/40 m-auto w-full h-1/3" />
 
+                  {(['n', 's', 'e', 'w'] as const).map((type) => {
+                    const isV = type === 'n' || type === 's';
+                    return (
+                      <div
+                        key={type}
+                        className="absolute touch-none"
+                        style={{
+                          top: type === 'n' ? '-20px' : type === 's' ? 'calc(100% - 20px)' : '40px',
+                          left: type === 'w' ? '-20px' : type === 'e' ? 'calc(100% - 20px)' : '40px',
+                          right: isV ? '40px' : 'auto',
+                          bottom: !isV ? '40px' : 'auto',
+                          width: isV ? 'auto' : '40px',
+                          height: isV ? '40px' : 'auto',
+                          cursor: isV ? 'ns-resize' : 'ew-resize',
+                          zIndex: 10,
+                        }}
+                        onPointerDown={(e) => onPointerDown(e, type)}
+                      />
+                    );
+                  })}
                   {(['nw', 'ne', 'sw', 'se'] as const).map((type) => (
                     <div
                       key={type}
-                      className="absolute w-20 h-20 flex items-center justify-center -ml-10 -mt-10 touch-none"
+                      className="absolute w-20 h-20 flex items-center justify-center -ml-10 -mt-10 touch-none z-20"
                       style={{
                         top: type.includes('n') ? '0%' : '100%',
                         left: type.includes('w') ? '0%' : '100%',
