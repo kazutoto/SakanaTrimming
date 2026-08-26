@@ -1,5 +1,6 @@
+/// <reference types="vite/client" />
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Upload, Download, X, Image as ImageIcon, CheckCircle } from 'lucide-react';
+import { Upload, Download, X, Image as ImageIcon, CheckCircle, Pipette } from 'lucide-react';
 
 const COLORS = {
   '白': '#FFFFFF',
@@ -37,6 +38,7 @@ export default function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [canSave, setCanSave] = useState<boolean>(true);
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
+  const [isEyedropperActive, setIsEyedropperActive] = useState<boolean>(false);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -196,6 +198,59 @@ export default function App() {
     }
 
     fallbackDownload();
+  };
+
+  const extractColorFromPointer = (e: React.PointerEvent) => {
+    if (!containerRef.current || !imageState) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const scale = imageState.canvasSize / rect.width;
+    const actualX = (e.clientX - rect.left) * scale;
+    const actualY = (e.clientY - rect.top) * scale;
+
+    const { imgX, imgY, w, h, element } = imageState;
+
+    if (actualX >= imgX && actualX <= imgX + w && actualY >= imgY && actualY <= imgY + h) {
+      const scaleX = element.naturalWidth / w;
+      const scaleY = element.naturalHeight / h;
+
+      const sx = (actualX - imgX) * scaleX;
+      const sy = (actualY - imgY) * scaleY;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 1;
+      canvas.height = 1;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(element, Math.floor(sx), Math.floor(sy), 1, 1, 0, 0, 1, 1);
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+        const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()}`;
+        setBgColor(hex);
+        setCanSave(true);
+      }
+    }
+  };
+
+  const handleEyedropperPointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    extractColorFromPointer(e);
+  };
+
+  const handleEyedropperPointerMove = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      extractColorFromPointer(e);
+    }
+  };
+
+  const handleEyedropperPointerUp = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      extractColorFromPointer(e);
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    setIsEyedropperActive(false);
   };
 
   const onPointerDown = (e: React.PointerEvent, type: 'move' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w') => {
@@ -452,18 +507,42 @@ export default function App() {
 
           <div className="flex items-center gap-2 px-2 sm:px-3 py-1.5 bg-black/30 rounded-full border border-white/10 shrink-0">
             <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">背景色</label>
-            <select
-              value={bgColor}
-              onChange={(e) => {
-                setBgColor(e.target.value);
-                setCanSave(true);
-              }}
-              className="bg-transparent text-sm focus:outline-none cursor-pointer text-slate-100"
+            <button
+              onClick={() => setIsEyedropperActive(!isEyedropperActive)}
+              className={`p-1.5 rounded-md transition-colors ${isEyedropperActive ? 'bg-blue-500 text-white' : 'text-slate-300 hover:bg-white/10'}`}
+              title="画像から色を抽出"
             >
-              {Object.entries(COLORS).map(([name, hex]) => (
-                <option key={name} value={hex} className="bg-slate-800 text-white">{name}</option>
-              ))}
-            </select>
+              <Pipette className="w-4 h-4" />
+            </button>
+            <div className="flex items-center">
+              <select
+                value={bgColor}
+                onChange={(e) => {
+                  setBgColor(e.target.value);
+                  setCanSave(true);
+                }}
+                className="bg-transparent text-sm focus:outline-none cursor-pointer text-slate-100"
+              >
+                {Object.entries(COLORS).map(([name, hex]) => (
+                  <option key={name} value={hex} className="bg-slate-800 text-white">{name}</option>
+                ))}
+                {!Object.values(COLORS).includes(bgColor) && (
+                  <option value={bgColor} className="bg-slate-800 text-white">カスタム</option>
+                )}
+              </select>
+              <label className="cursor-pointer ml-2 flex items-center">
+                <div className="w-5 h-5 rounded-full border border-white/40 shadow-inner" style={{ backgroundColor: bgColor }} />
+                <input
+                  type="color"
+                  value={bgColor}
+                  onChange={(e) => {
+                    setBgColor(e.target.value.toUpperCase());
+                    setCanSave(true);
+                  }}
+                  className="sr-only"
+                />
+              </label>
+            </div>
           </div>
         </div>
       )}
@@ -597,6 +676,17 @@ export default function App() {
                     </div>
                   ))}
                 </div>
+              )}
+
+              {isEyedropperActive && (
+                <div 
+                  className="absolute inset-0 z-50 cursor-crosshair touch-none" 
+                  onPointerDown={handleEyedropperPointerDown}
+                  onPointerMove={handleEyedropperPointerMove}
+                  onPointerUp={handleEyedropperPointerUp}
+                  onPointerCancel={handleEyedropperPointerUp}
+                  title="ドラッグして色を取得"
+                />
               )}
             </div>
             
