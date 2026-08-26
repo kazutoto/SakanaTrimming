@@ -445,10 +445,12 @@ export default function App() {
       newX = startCrop.x + dx;
       newY = startCrop.y + dy;
 
-      if (!initialSnap.left && Math.abs(newX - imgX) < snapThresh) newX = imgX;
-      if (!initialSnap.right && Math.abs(newX + startCrop.w - (imgX + w)) < snapThresh) newX = imgX + w - startCrop.w;
-      if (!initialSnap.top && Math.abs(newY - imgY) < snapThresh) newY = imgY;
-      if (!initialSnap.bottom && Math.abs(newY + startCrop.h - (imgY + h)) < snapThresh) newY = imgY + h - startCrop.h;
+      if (!isSplitGeneration) {
+        if (!initialSnap.left && Math.abs(newX - imgX) < snapThresh) newX = imgX;
+        if (!initialSnap.right && Math.abs(newX + startCrop.w - (imgX + w)) < snapThresh) newX = imgX + w - startCrop.w;
+        if (!initialSnap.top && Math.abs(newY - imgY) < snapThresh) newY = imgY;
+        if (!initialSnap.bottom && Math.abs(newY + startCrop.h - (imgY + h)) < snapThresh) newY = imgY + h - startCrop.h;
+      }
 
       if (isSplitGeneration) {
         newX = Math.max(imgX, Math.min(newX, imgX + w - startCrop.w));
@@ -577,17 +579,19 @@ export default function App() {
         propW = Math.max(minSize, Math.min(propW, maxW));
         propH = Math.max(minSize, Math.min(propH, maxH));
 
-        if (type === 'se' || type === 'ne' || type === 'e') {
-          if (!initialSnap.right && Math.abs((startCrop.x + propW) - (imgX + w)) < snapThresh) propW = (imgX + w) - startCrop.x;
-        }
-        if (type === 'nw' || type === 'sw' || type === 'w') {
-          if (!initialSnap.left && Math.abs((startCrop.x + startCrop.w - propW) - imgX) < snapThresh) propW = startCrop.x + startCrop.w - imgX;
-        }
-        if (type === 'se' || type === 'sw' || type === 's') {
-          if (!initialSnap.bottom && Math.abs((startCrop.y + propH) - (imgY + h)) < snapThresh) propH = (imgY + h) - startCrop.y;
-        }
-        if (type === 'nw' || type === 'ne' || type === 'n') {
-          if (!initialSnap.top && Math.abs((startCrop.y + startCrop.h - propH) - imgY) < snapThresh) propH = startCrop.y + startCrop.h - imgY;
+        if (!isSplitGeneration) {
+          if (type === 'se' || type === 'ne' || type === 'e') {
+            if (!initialSnap.right && Math.abs((startCrop.x + propW) - (imgX + w)) < snapThresh) propW = (imgX + w) - startCrop.x;
+          }
+          if (type === 'nw' || type === 'sw' || type === 'w') {
+            if (!initialSnap.left && Math.abs((startCrop.x + startCrop.w - propW) - imgX) < snapThresh) propW = startCrop.x + startCrop.w - imgX;
+          }
+          if (type === 'se' || type === 'sw' || type === 's') {
+            if (!initialSnap.bottom && Math.abs((startCrop.y + propH) - (imgY + h)) < snapThresh) propH = (imgY + h) - startCrop.y;
+          }
+          if (type === 'nw' || type === 'ne' || type === 'n') {
+            if (!initialSnap.top && Math.abs((startCrop.y + startCrop.h - propH) - imgY) < snapThresh) propH = startCrop.y + startCrop.h - imgY;
+          }
         }
 
         if (isSplitGeneration && !initialSnap.ratio) {
