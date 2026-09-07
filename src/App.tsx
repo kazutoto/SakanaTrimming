@@ -919,7 +919,7 @@ export default function App() {
                 ファイルを選択
               </span>
             </div>
-            <div className="w-full flex justify-end px-2">
+            <div className="w-full flex flex-wrap justify-end gap-x-4 gap-y-2 px-2">
               <a 
                 href="https://sns.plusmember.jp/sakanaquarium/R7BaPbkoWZ/mypage"
                 target="_blank"
@@ -927,6 +927,17 @@ export default function App() {
                 className="text-slate-400 hover:text-slate-300 text-xs sm:text-sm underline transition-colors"
               >
                 SAKANACOMMUNITY：かずとと
+              </a>
+              <a 
+                href="https://x.com/kkawabe"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-slate-400 hover:text-slate-300 text-xs sm:text-sm transition-colors flex items-center gap-1"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3 sm:w-3.5 sm:h-3.5">
+                  <path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z" />
+                </svg>
+                <span className="underline">@kazutoto</span>
               </a>
             </div>
           </div>
