@@ -827,7 +827,9 @@ export default function App() {
         </div>
       )}
 
-      <main className="flex-grow relative flex flex-col items-center justify-center p-4 sm:p-12 overflow-hidden">
+      <main className={`flex-grow relative flex flex-col items-center overflow-hidden ${
+        !imageState && !previewDataUrls ? 'justify-start pt-5 px-4 sm:px-12 pb-4 sm:pb-12' : 'justify-center p-4 sm:p-12'
+      }`}>
         {/* Background Decorative Elements */}
         <div className="absolute top-1/4 -left-20 w-96 h-96 bg-blue-500/10 rounded-full blur-[120px] pointer-events-none"></div>
         <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none"></div>
@@ -867,33 +869,66 @@ export default function App() {
             </div>
           </div>
         ) : !imageState ? (
-          <div 
-            className="relative z-10 w-full max-w-2xl bg-white/5 border-2 border-dashed border-white/20 p-8 md:p-16 rounded-xl flex flex-col items-center justify-center text-center cursor-pointer hover:border-blue-500 hover:bg-blue-500/10 transition-all duration-200"
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <div className="w-16 h-16 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center mb-4">
-              <Upload className="w-8 h-8" />
+          <div className="relative z-10 w-full max-w-2xl flex flex-col items-center gap-5">
+            {/* アプリ説明 */}
+            <div className="w-full bg-white/5 border border-white/10 backdrop-blur-md rounded-xl p-5 sm:p-6 text-slate-200 text-sm leading-relaxed shadow-lg">
+              <p className="text-base sm:text-lg font-semibold text-white mb-2">
+                <a 
+                  href="https://sns.emtg.jp/sakanaquarium/" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300 underline underline-offset-4 font-bold transition-colors"
+                >
+                  SAKANACOMMUNITY
+                </a>
+                {' '}向けの写真加工・リサイズアプリです。
+              </p>
+              <p className="text-slate-300 text-xs sm:text-sm mb-1.5 leading-relaxed">
+                余白を追加して綺麗な正方形に整えることで、横長写真なども途中で見切れずに投稿できます。
+              </p>
+              <p className="text-slate-400 text-xs sm:text-sm leading-relaxed">
+                トリミング、背景色変更、スタンプ追加、縦の連続写真（分割生成）にも対応。完全無料でお使いいただけます。
+              </p>
             </div>
-            <h2 className="text-xl font-semibold mb-2 text-slate-100">画像を選択またはドロップ</h2>
-            <p className="text-slate-400 text-sm mb-6 max-w-sm">
-              タップしてスマホの写真を選ぶか、PCからドラッグ＆ドロップしてください。
-            </p>
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept="image/*"
-              onChange={(e) => {
-                if (e.target.files && e.target.files.length > 0) {
-                  handleFile(e.target.files[0]);
-                }
-              }}
-              className="hidden"
-            />
-            <span className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium shadow-lg shadow-blue-600/20 transition-all border border-blue-400/20">
-              ファイルを選択
-            </span>
+
+            <div 
+              className="w-full bg-white/5 border-2 border-dashed border-white/20 p-8 md:p-14 rounded-xl flex flex-col items-center justify-center text-center cursor-pointer hover:border-blue-500 hover:bg-blue-500/10 transition-all duration-200"
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <div className="w-16 h-16 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center mb-4">
+                <Upload className="w-8 h-8" />
+              </div>
+              <h2 className="text-xl font-semibold mb-2 text-slate-100">画像を選択またはドロップ</h2>
+              <p className="text-slate-400 text-sm mb-6 max-w-sm">
+                タップしてスマホの写真を選ぶか、PCからドラッグ＆ドロップしてください。
+              </p>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files.length > 0) {
+                    handleFile(e.target.files[0]);
+                  }
+                }}
+                className="hidden"
+              />
+              <span className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium shadow-lg shadow-blue-600/20 transition-all border border-blue-400/20">
+                ファイルを選択
+              </span>
+            </div>
+            <div className="w-full flex justify-end px-2">
+              <a 
+                href="https://sns.plusmember.jp/sakanaquarium/R7BaPbkoWZ/mypage"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-slate-400 hover:text-slate-300 text-xs sm:text-sm underline transition-colors"
+              >
+                SAKANACOMMUNITY：かずとと
+              </a>
+            </div>
           </div>
         ) : (
           <div className="relative z-10 w-full max-w-[80vh] sm:max-w-[560px] mx-auto flex flex-col items-center select-none">
