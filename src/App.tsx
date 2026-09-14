@@ -887,7 +887,10 @@ export default function App() {
                 余白を追加して綺麗な正方形に整えることで、横長写真なども途中で見切れずに投稿できます。
               </p>
               <p className="text-slate-400 text-xs sm:text-sm leading-relaxed">
-                トリミング、背景色変更、スタンプ追加、縦の連続写真（分割生成）にも対応。完全無料でお使いいただけます。
+                トリミング、背景色変更、スタンプ追加、縦の連続写真（分割生成）にも対応。
+              </p>
+              <p className="text-slate-400 text-xs sm:text-sm leading-relaxed">
+                無料でお使いいただけます。また、ローカルで画像処理をしています。サーバーなどに画像などを送信しません。
               </p>
             </div>
 
