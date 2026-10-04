@@ -777,9 +777,9 @@ export default function App() {
             </div>
           </div>
 
-          {/* 下段：メッセージ追加 */}
+          {/* 下段：コメント・絵文字追加 */}
           <fieldset className="w-full min-w-0 max-w-lg border border-white/20 rounded-xl px-2 sm:px-4 pb-3 pt-1 mt-1 mb-2">
-            <legend className="text-xs font-semibold text-slate-400 px-2 uppercase tracking-wider">メッセージ</legend>
+            <legend className="text-xs font-semibold text-slate-400 px-2 uppercase tracking-wider">コメントや絵文字（絵文字を拡大して顔隠しも！）</legend>
             <div className="flex flex-row items-center gap-1.5 sm:gap-2 w-full mt-1">
               <input
                 type="text"
